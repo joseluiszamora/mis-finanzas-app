@@ -1,26 +1,18 @@
 import 'package:gsheets/gsheets.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../models/movimiento.dart';
 
 class GoogleSheetsService {
-  // IMPORTANTE: Reemplaza esto con tus credenciales de Google Sheets API
-  // Para obtener las credenciales:
-  // 1. Ve a https://console.cloud.google.com/
-  // 2. Crea un proyecto nuevo o usa uno existente
-  // 3. Habilita Google Sheets API
-  // 4. Crea credenciales (Service Account)
-  // 5. Descarga el JSON de credenciales
-  static const _credentials = r'''
-{
-  
-}
-''';
+  // Las credenciales ahora se cargan desde el archivo .env
+  // Para configurar:
+  // 1. Copia .env.example a .env
+  // 2. Completa con tus credenciales de Google Cloud Console
+  // 3. Nunca subas el archivo .env al repositorio (está en .gitignore)
 
-  // IMPORTANTE: Reemplaza con el ID de tu Google Sheet
-  // Lo encuentras en la URL: https://docs.google.com/spreadsheets/d/[SPREADSHEET_ID]/edit
-  static const _spreadsheetId = '15qyupEAyvF7Sl0035l8uoSj52fLFTCP3b0LllSDhJT0';
-
-  // Nombre de la hoja donde están los datos
-  static const _worksheetTitle = 'Hoja 1'; // Cambia según tu hoja
+  static String get _credentials => dotenv.env['GOOGLE_CREDENTIALS'] ?? '';
+  static String get _spreadsheetId => dotenv.env['GOOGLE_SPREADSHEET_ID'] ?? '';
+  static String get _worksheetTitle =>
+      dotenv.env['GOOGLE_WORKSHEET_TITLE'] ?? 'Hoja 1';
 
   GSheets? _gsheets;
   Spreadsheet? _spreadsheet;

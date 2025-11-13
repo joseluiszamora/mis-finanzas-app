@@ -48,4 +48,9 @@ app.*.map.json
 google_credentials.json
 **/google_credentials.json
 credentials.json
+
+# Variables de entorno - NO SUBIR AL REPOSITORIO
+.env
+.env.local
+.env.*.local
 **/credentials.json
