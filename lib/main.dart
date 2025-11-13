@@ -1,0 +1,39 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:intl/date_symbol_data_local.dart';
+import 'providers/movimientos_provider.dart';
+import 'screens/home_screen.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Inicializar localización para fechas en español
+  await initializeDateFormatting('es', null);
+
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (_) => MovimientosProvider(),
+      child: MaterialApp(
+        title: 'Mis Finanzas',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.teal,
+            primary: Colors.teal,
+          ),
+          useMaterial3: true,
+          fontFamily: 'Roboto',
+        ),
+        locale: const Locale('es', 'ES'),
+        home: const HomeScreen(),
+      ),
+    );
+  }
+}
