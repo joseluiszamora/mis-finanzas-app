@@ -18,6 +18,10 @@ class _HomeScreenState extends State<HomeScreen> {
   List<String> _categorias = [];
   bool _isLoadingCategorias = true;
 
+  // Filtro por fecha
+  DateTime? _fechaInicio;
+  DateTime? _fechaFin;
+
   @override
   void initState() {
     super.initState();
@@ -134,8 +138,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 // Tarjeta de resumen
                 _buildResumenCard(provider),
 
-                // Filtro por categoría
-                _buildFiltroCategoria(),
+                // Filtros
+                _buildFiltros(),
 
                 // Lista de movimientos
                 Expanded(
@@ -287,74 +291,222 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildFiltroCategoria() {
+  Widget _buildFiltros() {
+    final dateFormat = DateFormat('dd/MM/yy');
+    final hayFiltroFecha = _fechaInicio != null || _fechaFin != null;
+    final hayFiltroCategoria = _categoriaFiltro != null;
+    final hayAlgunFiltro = hayFiltroFecha || hayFiltroCategoria;
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
+      child: Column(
         children: [
-          const Icon(Icons.filter_list, color: Colors.teal, size: 20),
-          const SizedBox(width: 12),
-          const Text(
-            'Filtrar por:',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child:
-                _isLoadingCategorias
-                    ? const Center(
-                      child: SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+          // Fila de filtros
+          Row(
+            children: [
+              // Filtro por categoría
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
                       ),
-                    )
-                    : DropdownButton<String?>(
-                      value: _categoriaFiltro,
-                      isExpanded: true,
-                      underline: Container(),
-                      hint: const Text('Todas las categorías'),
-                      items: [
-                        const DropdownMenuItem<String?>(
-                          value: null,
-                          child: Text(
-                            'Todas las categorías',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        ..._categorias.map(
-                          (categoria) => DropdownMenuItem<String?>(
-                            value: categoria,
-                            child: Text(categoria),
-                          ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.category, color: Colors.teal, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child:
+                            _isLoadingCategorias
+                                ? const Center(
+                                  child: SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                )
+                                : DropdownButton<String?>(
+                                  value: _categoriaFiltro,
+                                  isExpanded: true,
+                                  underline: Container(),
+                                  isDense: true,
+                                  hint: const Text(
+                                    'Categoría',
+                                    style: TextStyle(fontSize: 13),
+                                  ),
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.black87,
+                                  ),
+                                  items: [
+                                    const DropdownMenuItem<String?>(
+                                      value: null,
+                                      child: Text('Todas'),
+                                    ),
+                                    ..._categorias.map(
+                                      (categoria) => DropdownMenuItem<String?>(
+                                        value: categoria,
+                                        child: Text(
+                                          categoria,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _categoriaFiltro = value;
+                                    });
+                                  },
+                                ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 8),
+
+              // Filtro por fecha
+              Expanded(
+                child: InkWell(
+                  onTap: _seleccionarRangoFechas,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.1),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
                         ),
                       ],
-                      onChanged: (value) {
-                        setState(() {
-                          _categoriaFiltro = value;
-                        });
-                      },
                     ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.date_range,
+                          color: hayFiltroFecha ? Colors.teal : Colors.grey,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            hayFiltroFecha
+                                ? '${_fechaInicio != null ? dateFormat.format(_fechaInicio!) : '...'} - ${_fechaFin != null ? dateFormat.format(_fechaFin!) : '...'}'
+                                : 'Todas las fechas',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color:
+                                  hayFiltroFecha
+                                      ? Colors.black87
+                                      : Colors.grey[600],
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (hayFiltroFecha)
+                          GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _fechaInicio = null;
+                                _fechaFin = null;
+                              });
+                            },
+                            child: const Icon(
+                              Icons.close,
+                              size: 16,
+                              color: Colors.grey,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
+
+          // Botón limpiar todos los filtros
+          if (hayAlgunFiltro)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _categoriaFiltro = null;
+                    _fechaInicio = null;
+                    _fechaFin = null;
+                  });
+                },
+                icon: const Icon(Icons.filter_alt_off, size: 16),
+                label: const Text(
+                  'Limpiar filtros',
+                  style: TextStyle(fontSize: 12),
+                ),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.grey[600],
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
+  }
+
+  Future<void> _seleccionarRangoFechas() async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      initialDateRange:
+          _fechaInicio != null && _fechaFin != null
+              ? DateTimeRange(start: _fechaInicio!, end: _fechaFin!)
+              : null,
+      locale: const Locale('es', 'ES'),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Colors.teal,
+              onPrimary: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _fechaInicio = picked.start;
+        _fechaFin = picked.end;
+      });
+    }
   }
 
   Widget _buildEmptyState() {
@@ -387,13 +539,46 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildMovimientosList(MovimientosProvider provider) {
-    // Filtrar movimientos según la categoría seleccionada
-    final movimientosFiltrados =
-        _categoriaFiltro == null
-            ? provider.movimientos
-            : provider.movimientos
-                .where((m) => m.categoria == _categoriaFiltro)
-                .toList();
+    // Filtrar movimientos según los filtros seleccionados
+    var movimientosFiltrados = provider.movimientos.toList();
+
+    // Filtro por categoría
+    if (_categoriaFiltro != null) {
+      movimientosFiltrados =
+          movimientosFiltrados
+              .where((m) => m.categoria == _categoriaFiltro)
+              .toList();
+    }
+
+    // Filtro por fecha
+    if (_fechaInicio != null || _fechaFin != null) {
+      movimientosFiltrados =
+          movimientosFiltrados.where((m) {
+            try {
+              final fechaMovimiento = DateFormat('dd/MM/yyyy').parse(m.fecha);
+
+              if (_fechaInicio != null && _fechaFin != null) {
+                return (fechaMovimiento.isAtSameMomentAs(_fechaInicio!) ||
+                        fechaMovimiento.isAfter(_fechaInicio!)) &&
+                    (fechaMovimiento.isAtSameMomentAs(_fechaFin!) ||
+                        fechaMovimiento.isBefore(
+                          _fechaFin!.add(const Duration(days: 1)),
+                        ));
+              } else if (_fechaInicio != null) {
+                return fechaMovimiento.isAtSameMomentAs(_fechaInicio!) ||
+                    fechaMovimiento.isAfter(_fechaInicio!);
+              } else if (_fechaFin != null) {
+                return fechaMovimiento.isAtSameMomentAs(_fechaFin!) ||
+                    fechaMovimiento.isBefore(
+                      _fechaFin!.add(const Duration(days: 1)),
+                    );
+              }
+              return true;
+            } catch (e) {
+              return true; // Si no se puede parsear la fecha, incluir el movimiento
+            }
+          }).toList();
+    }
 
     // Si no hay movimientos después del filtro
     if (movimientosFiltrados.isEmpty) {
@@ -413,7 +598,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'para la categoría "$_categoriaFiltro"',
+              _buildMensajeFiltro(),
               style: TextStyle(fontSize: 14, color: Colors.grey[500]),
               textAlign: TextAlign.center,
             ),
@@ -422,10 +607,12 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () {
                 setState(() {
                   _categoriaFiltro = null;
+                  _fechaInicio = null;
+                  _fechaFin = null;
                 });
               },
-              icon: const Icon(Icons.clear),
-              label: const Text('Limpiar filtro'),
+              icon: const Icon(Icons.filter_alt_off),
+              label: const Text('Limpiar filtros'),
             ),
           ],
         ),
@@ -442,6 +629,27 @@ class _HomeScreenState extends State<HomeScreen> {
         return _buildMovimientoCard(movimiento, realIndex);
       },
     );
+  }
+
+  String _buildMensajeFiltro() {
+    final dateFormat = DateFormat('dd/MM/yyyy');
+    List<String> filtros = [];
+
+    if (_categoriaFiltro != null) {
+      filtros.add('categoría "$_categoriaFiltro"');
+    }
+
+    if (_fechaInicio != null && _fechaFin != null) {
+      filtros.add(
+        'fechas ${dateFormat.format(_fechaInicio!)} - ${dateFormat.format(_fechaFin!)}',
+      );
+    } else if (_fechaInicio != null) {
+      filtros.add('desde ${dateFormat.format(_fechaInicio!)}');
+    } else if (_fechaFin != null) {
+      filtros.add('hasta ${dateFormat.format(_fechaFin!)}');
+    }
+
+    return 'para ${filtros.join(' y ')}';
   }
 
   Widget _buildMovimientoCard(Movimiento movimiento, int index) {

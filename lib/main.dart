@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -35,7 +36,14 @@ class MyApp extends StatelessWidget {
           useMaterial3: true,
           fontFamily: 'Roboto',
         ),
+        // Configuración de localización para español
         locale: const Locale('es', 'ES'),
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: const [Locale('es', 'ES'), Locale('en', 'US')],
         home: const HomeScreen(),
       ),
     );

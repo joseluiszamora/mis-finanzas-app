@@ -35,6 +35,9 @@ class GoogleSheetsService {
     }
   }
 
+  // Variable para almacenar el total de filas (para calcular índices correctos)
+  int _totalRows = 0;
+
   // Obtener todos los movimientos
   Future<List<Movimiento>> obtenerMovimientos() async {
     try {
@@ -47,6 +50,9 @@ class GoogleSheetsService {
 
       // Obtener todas las filas (excluyendo el encabezado)
       final rows = await _worksheet!.values.allRows(fromRow: 2);
+
+      // Guardar el total de filas para calcular índices correctamente
+      _totalRows = rows.length;
 
       return rows
           .map((row) => Movimiento.fromSheetRow(row))
@@ -118,10 +124,16 @@ class GoogleSheetsService {
         }
       }
 
-      // rowIndex es el índice en la lista (0-based)
-      // pero en Google Sheets las filas empiezan en 1 y la fila 1 es el encabezado
-      // entonces la fila real es: rowIndex + 2
-      final sheetRow = rowIndex + 2;
+      // rowIndex es el índice en la lista invertida (0 = más reciente)
+      // La lista está invertida, así que necesitamos convertir al índice real
+      // Índice real = (totalRows - 1) - rowIndex
+      // La fila en Google Sheets = índice real + 2 (fila 1 es encabezado)
+      final realIndex = (_totalRows - 1) - rowIndex;
+      final sheetRow = realIndex + 2;
+
+      print(
+        'Editando: rowIndex=$rowIndex, totalRows=$_totalRows, realIndex=$realIndex, sheetRow=$sheetRow',
+      );
 
       // Actualizar cada celda de la fila
       final row = movimiento.toSheetRow();
@@ -150,13 +162,22 @@ class GoogleSheetsService {
         }
       }
 
-      // rowIndex es el índice en la lista (0-based)
-      // pero en Google Sheets las filas empiezan en 1 y la fila 1 es el encabezado
-      // entonces la fila real es: rowIndex + 2
-      final sheetRow = rowIndex + 2;
+      // rowIndex es el índice en la lista invertida (0 = más reciente)
+      // La lista está invertida, así que necesitamos convertir al índice real
+      // Índice real = (totalRows - 1) - rowIndex
+      // La fila en Google Sheets = índice real + 2 (fila 1 es encabezado)
+      final realIndex = (_totalRows - 1) - rowIndex;
+      final sheetRow = realIndex + 2;
+
+      print(
+        'Eliminando: rowIndex=$rowIndex, totalRows=$_totalRows, realIndex=$realIndex, sheetRow=$sheetRow',
+      );
 
       // Eliminar la fila
       await _worksheet!.deleteRow(sheetRow);
+
+      // Actualizar el contador de filas
+      _totalRows--;
 
       return true;
     } catch (e) {
