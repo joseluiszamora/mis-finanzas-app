@@ -11,27 +11,89 @@ class GoogleSheetsService {
 
   static String get _credentials => dotenv.env['GOOGLE_CREDENTIALS'] ?? '';
   static String get _spreadsheetId => dotenv.env['GOOGLE_SPREADSHEET_ID'] ?? '';
-  static String get _worksheetTitle =>
-      dotenv.env['GOOGLE_WORKSHEET_TITLE'] ?? 'Hoja 1';
 
   GSheets? _gsheets;
   Spreadsheet? _spreadsheet;
   Worksheet? _worksheet;
+  String _currentWorksheetTitle = '';
 
-  // Inicializar conexión con Google Sheets
-  Future<bool> init() async {
+  // Getter para obtener el título actual de la worksheet
+  String get currentWorksheetTitle => _currentWorksheetTitle;
+
+  // Inicializar conexión con Google Sheets con una worksheet específica
+  Future<bool> init({String? worksheetTitle}) async {
     try {
       _gsheets = GSheets(_credentials);
       _spreadsheet = await _gsheets!.spreadsheet(_spreadsheetId);
-      _worksheet = _spreadsheet!.worksheetByTitle(_worksheetTitle);
+
+      // Usar el título proporcionado o el del .env como fallback
+      _currentWorksheetTitle =
+          worksheetTitle ?? dotenv.env['GOOGLE_WORKSHEET_TITLE'] ?? 'Hoja 1';
+
+      _worksheet = _spreadsheet!.worksheetByTitle(_currentWorksheetTitle);
 
       // Si la hoja no existe, intenta obtener la primera hoja disponible
-      _worksheet ??= _spreadsheet!.worksheetByIndex(0);
+      if (_worksheet == null) {
+        _worksheet = _spreadsheet!.worksheetByIndex(0);
+        if (_worksheet != null) {
+          _currentWorksheetTitle = _worksheet!.title;
+        }
+      }
 
       return _worksheet != null;
     } catch (e) {
       print('Error al inicializar Google Sheets: $e');
       return false;
+    }
+  }
+
+  // Cambiar a una worksheet diferente
+  Future<bool> changeWorksheet(String worksheetTitle) async {
+    try {
+      if (_spreadsheet == null) {
+        await init(worksheetTitle: worksheetTitle);
+        return _worksheet != null;
+      }
+
+      final newWorksheet = _spreadsheet!.worksheetByTitle(worksheetTitle);
+      if (newWorksheet != null) {
+        _worksheet = newWorksheet;
+        _currentWorksheetTitle = worksheetTitle;
+        _totalRows = 0; // Resetear el contador de filas
+        return true;
+      }
+      return false;
+    } catch (e) {
+      print('Error al cambiar worksheet: $e');
+      return false;
+    }
+  }
+
+  // Verificar si una worksheet existe en el spreadsheet
+  Future<bool> worksheetExists(String title) async {
+    try {
+      if (_spreadsheet == null) {
+        _gsheets = GSheets(_credentials);
+        _spreadsheet = await _gsheets!.spreadsheet(_spreadsheetId);
+      }
+      return _spreadsheet!.worksheetByTitle(title) != null;
+    } catch (e) {
+      print('Error al verificar worksheet: $e');
+      return false;
+    }
+  }
+
+  // Obtener lista de todas las worksheets del spreadsheet
+  Future<List<String>> getAllWorksheetTitles() async {
+    try {
+      if (_spreadsheet == null) {
+        _gsheets = GSheets(_credentials);
+        _spreadsheet = await _gsheets!.spreadsheet(_spreadsheetId);
+      }
+      return _spreadsheet!.sheets.map((sheet) => sheet.title).toList();
+    } catch (e) {
+      print('Error al obtener worksheets: $e');
+      return [];
     }
   }
 

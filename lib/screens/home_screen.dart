@@ -58,9 +58,26 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: const Text(
-          'Mis Finanzas',
-          style: TextStyle(fontWeight: FontWeight.bold),
+        title: Consumer<MovimientosProvider>(
+          builder: (context, provider, child) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Mis Finanzas',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+                if (provider.currentWorksheet.isNotEmpty)
+                  Text(
+                    provider.currentWorksheet,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.normal,
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
         backgroundColor: Colors.teal,
         foregroundColor: Colors.white,

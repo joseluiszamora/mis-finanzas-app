@@ -1,19 +1,23 @@
 import 'package:flutter/foundation.dart';
 import '../models/movimiento.dart';
 import '../services/google_sheets_service.dart';
+import '../services/worksheet_service.dart';
 
 class MovimientosProvider extends ChangeNotifier {
   final GoogleSheetsService _sheetsService = GoogleSheetsService();
+  final WorksheetService _worksheetService = WorksheetService();
 
   List<Movimiento> _movimientos = [];
   bool _isLoading = false;
   bool _isInitialized = false;
   String? _error;
+  String _currentWorksheet = '';
 
   List<Movimiento> get movimientos => _movimientos;
   bool get isLoading => _isLoading;
   bool get isInitialized => _isInitialized;
   String? get error => _error;
+  String get currentWorksheet => _currentWorksheet;
 
   // Inicializar el servicio de Google Sheets
   Future<void> init() async {
@@ -22,8 +26,19 @@ class MovimientosProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _isInitialized = await _sheetsService.init();
+      // Inicializar el servicio de worksheets
+      await _worksheetService.init();
+
+      // Obtener la worksheet activa
+      _currentWorksheet = await _worksheetService.getActiveWorksheet();
+
+      // Inicializar Google Sheets con la worksheet activa
+      _isInitialized = await _sheetsService.init(
+        worksheetTitle: _currentWorksheet,
+      );
+
       if (_isInitialized) {
+        _currentWorksheet = _sheetsService.currentWorksheetTitle;
         await cargarMovimientos();
       } else {
         _error =
@@ -36,6 +51,59 @@ class MovimientosProvider extends ChangeNotifier {
 
     _isLoading = false;
     notifyListeners();
+  }
+
+  // Cambiar a una worksheet diferente
+  Future<bool> cambiarWorksheet(String worksheetTitle) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final success = await _sheetsService.changeWorksheet(worksheetTitle);
+
+      if (success) {
+        _currentWorksheet = worksheetTitle;
+        await _worksheetService.setActiveWorksheet(worksheetTitle);
+        await cargarMovimientos();
+        return true;
+      } else {
+        _error = 'No se pudo cambiar a la hoja "$worksheetTitle"';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      _error = 'Error al cambiar worksheet: $e';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // Verificar si una worksheet existe en Google Sheets
+  Future<bool> verificarWorksheetExiste(String title) async {
+    return await _sheetsService.worksheetExists(title);
+  }
+
+  // Obtener todas las worksheets del spreadsheet
+  Future<List<String>> obtenerTodasLasWorksheets() async {
+    return await _sheetsService.getAllWorksheetTitles();
+  }
+
+  // Obtener worksheets guardadas localmente
+  Future<List<String>> obtenerWorksheetsGuardadas() async {
+    return await _worksheetService.getWorksheets();
+  }
+
+  // Agregar una worksheet a la lista local
+  Future<bool> agregarWorksheetLocal(String title) async {
+    return await _worksheetService.addWorksheet(title);
+  }
+
+  // Eliminar una worksheet de la lista local
+  Future<bool> eliminarWorksheetLocal(String title) async {
+    return await _worksheetService.removeWorksheet(title);
   }
 
   // Cargar movimientos desde Google Sheets
