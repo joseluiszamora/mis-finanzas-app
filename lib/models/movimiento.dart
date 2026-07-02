@@ -1,72 +1,82 @@
-class Movimiento {
-  final String fecha;
-  final String mes;
-  final String tipo; // 'Ingreso' o 'Egreso'
-  final String categoria;
-  final String concepto;
-  final double monto;
-  final String grupo;
+import 'package:intl/intl.dart';
 
-  Movimiento({
-    required this.fecha,
-    required this.mes,
+import 'sync_status.dart';
+import 'tipo_movimiento.dart';
+
+class Movimiento {
+  static const _groupSentinel = Object();
+
+  const Movimiento({
+    required this.id,
     required this.tipo,
-    required this.categoria,
+    required this.categoriaId,
+    required this.grupoId,
     required this.concepto,
-    required this.monto,
-    required this.grupo,
+    required this.amountCents,
+    required this.occurredAt,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.deletedAt,
+    required this.syncStatus,
+    this.categoriaNombre,
+    this.grupoNombre,
   });
 
-  // Constructor desde una fila de Google Sheets
-  factory Movimiento.fromSheetRow(List<dynamic> row) {
-    String fechaStr = row.length > 0 ? row[0].toString() : '';
+  final String id;
+  final TipoMovimiento tipo;
+  final String categoriaId;
+  final String? grupoId;
+  final String concepto;
+  final int amountCents;
+  final DateTime occurredAt;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? deletedAt;
+  final SyncStatus syncStatus;
+  final String? categoriaNombre;
+  final String? grupoNombre;
 
-    // Si la fecha es un número (formato serial de Excel), convertirlo a fecha legible
-    if (fechaStr.isNotEmpty && double.tryParse(fechaStr) != null) {
-      // Es un número serial de Excel/Sheets (días desde 01/01/1900)
-      final serialNumber = double.parse(fechaStr);
-      // Google Sheets usa 30/12/1899 como día 1
-      final baseDate = DateTime(1899, 12, 30);
-      final fecha = baseDate.add(Duration(days: serialNumber.toInt()));
-      fechaStr =
-          '${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year}';
-    }
+  double get monto => amountCents / 100;
+  String get fecha => DateFormat('dd/MM/yyyy').format(occurredAt);
+  String get mes => DateFormat('MMMM', 'es').format(occurredAt);
+  bool get isIngreso => tipo.isIngreso;
+  bool get isDeleted => deletedAt != null;
 
-    return Movimiento(
-      fecha: fechaStr,
-      mes: row.length > 1 ? row[1].toString() : '',
-      tipo: row.length > 2 ? row[2].toString() : '',
-      categoria: row.length > 3 ? row[3].toString() : '',
-      concepto: row.length > 4 ? row[4].toString() : '',
-      monto: row.length > 5 ? double.tryParse(row[5].toString()) ?? 0.0 : 0.0,
-      grupo: row.length > 6 ? row[6].toString() : '',
-    );
-  }
-
-  // Convertir a lista para insertar en Google Sheets
-  // Agregamos ' al inicio de la fecha para forzar formato texto
-  List<dynamic> toSheetRow() {
-    return ["'$fecha", mes, tipo, categoria, concepto, monto, grupo];
-  }
-
-  // Copiar con modificaciones
   Movimiento copyWith({
-    String? fecha,
-    String? mes,
-    String? tipo,
-    String? categoria,
+    String? id,
+    TipoMovimiento? tipo,
+    String? categoriaId,
+    Object? grupoId = _groupSentinel,
     String? concepto,
-    double? monto,
-    String? grupo,
+    int? amountCents,
+    DateTime? occurredAt,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    DateTime? deletedAt,
+    SyncStatus? syncStatus,
+    String? categoriaNombre,
+    String? grupoNombre,
   }) {
     return Movimiento(
-      fecha: fecha ?? this.fecha,
-      mes: mes ?? this.mes,
+      id: id ?? this.id,
       tipo: tipo ?? this.tipo,
-      categoria: categoria ?? this.categoria,
+      categoriaId: categoriaId ?? this.categoriaId,
+      grupoId:
+          identical(grupoId, _groupSentinel)
+              ? this.grupoId
+              : grupoId as String?,
       concepto: concepto ?? this.concepto,
-      monto: monto ?? this.monto,
-      grupo: grupo ?? this.grupo,
+      amountCents: amountCents ?? this.amountCents,
+      occurredAt: occurredAt ?? this.occurredAt,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      syncStatus: syncStatus ?? this.syncStatus,
+      categoriaNombre: categoriaNombre ?? this.categoriaNombre,
+      grupoNombre:
+          identical(grupoId, _groupSentinel)
+              ? (grupoNombre ?? this.grupoNombre)
+              : grupoNombre,
     );
   }
 }

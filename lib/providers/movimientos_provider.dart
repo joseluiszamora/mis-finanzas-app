@@ -1,185 +1,243 @@
 import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
+
+import '../data/repositories/catalogos_repository.dart';
+import '../data/repositories/movimientos_repository.dart';
+import '../data/sync/sync_coordinator.dart';
+import '../models/categoria.dart';
+import '../models/grupo.dart';
 import '../models/movimiento.dart';
-import '../services/google_sheets_service.dart';
+import '../models/resumen_financiero.dart';
+import '../models/tipo_movimiento.dart';
 
 class MovimientosProvider extends ChangeNotifier {
-  final GoogleSheetsService _sheetsService = GoogleSheetsService();
+  MovimientosProvider({
+    required MovimientosRepository movimientosRepository,
+    required CatalogosRepository catalogosRepository,
+    required SyncCoordinator syncCoordinator,
+    Uuid? uuid,
+  }) : _movimientosRepository = movimientosRepository,
+       _catalogosRepository = catalogosRepository,
+       _syncCoordinator = syncCoordinator,
+       _uuid = uuid ?? const Uuid();
 
-  List<Movimiento> _movimientos = [];
+  final MovimientosRepository _movimientosRepository;
+  final CatalogosRepository _catalogosRepository;
+  final SyncCoordinator _syncCoordinator;
+  final Uuid _uuid;
+
+  List<Movimiento> _movimientos = const [];
+  List<Categoria> _categorias = const [];
+  List<Grupo> _grupos = const [];
+  ResumenFinanciero _resumen = const ResumenFinanciero(
+    totalIngresosCents: 0,
+    totalEgresosCents: 0,
+  );
   bool _isLoading = false;
   bool _isInitialized = false;
   String? _error;
 
   List<Movimiento> get movimientos => _movimientos;
+  List<Categoria> get categorias => _categorias;
+  List<Grupo> get grupos => _grupos;
   bool get isLoading => _isLoading;
   bool get isInitialized => _isInitialized;
   String? get error => _error;
+  String get syncModeLabel => _syncCoordinator.syncModeLabel;
+  bool get isRemoteSyncEnabled => _syncCoordinator.isRemoteSyncEnabled;
 
-  // Inicializar el servicio de Google Sheets
+  double get totalIngresos => _resumen.totalIngresos;
+  double get totalEgresos => _resumen.totalEgresos;
+  double get balance => _resumen.balance;
+
   Future<void> init() async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
-    try {
-      _isInitialized = await _sheetsService.init();
-      if (_isInitialized) {
-        await cargarMovimientos();
-      } else {
-        _error =
-            'No se pudo conectar con Google Sheets. Verifica las credenciales.';
-      }
-    } catch (e) {
-      _error = 'Error al inicializar: $e';
-      _isInitialized = false;
+    if (_isInitialized) {
+      await recargarDesdeBase();
+      return;
     }
 
-    _isLoading = false;
-    notifyListeners();
-  }
-
-  // Cargar movimientos desde Google Sheets
-  Future<void> cargarMovimientos() async {
-    _isLoading = true;
+    _setLoading(true);
     _error = null;
-    notifyListeners();
 
     try {
-      _movimientos = await _sheetsService.obtenerMovimientos();
+      await _recargarTodo();
+      _isInitialized = true;
     } catch (e) {
-      _error = 'Error al cargar movimientos: $e';
-    }
-
-    _isLoading = false;
-    notifyListeners();
-  }
-
-  // Agregar un nuevo movimiento
-  Future<bool> agregarMovimiento(Movimiento movimiento) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
-    try {
-      final success = await _sheetsService.agregarMovimiento(movimiento);
-
-      if (success) {
-        // Agregar el movimiento localmente también
-        _movimientos.insert(0, movimiento);
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      } else {
-        _error = 'No se pudo agregar el movimiento';
-        _isLoading = false;
-        notifyListeners();
-        return false;
-      }
-    } catch (e) {
-      _error = 'Error al agregar movimiento: $e';
-      _isLoading = false;
-      notifyListeners();
-      return false;
+      _error = 'Error al inicializar la base local: $e';
+    } finally {
+      _setLoading(false);
     }
   }
 
-  // Obtener resumen del mes
-  Future<Map<String, double>> obtenerResumenMes(String mes) async {
-    return await _sheetsService.obtenerResumenMes(mes);
-  }
-
-  // Filtrar movimientos por tipo
-  List<Movimiento> filtrarPorTipo(String tipo) {
-    return _movimientos
-        .where((m) => m.tipo.toLowerCase() == tipo.toLowerCase())
-        .toList();
-  }
-
-  // Calcular totales
-  double get totalIngresos {
-    return _movimientos
-        .where((m) => m.tipo.toLowerCase() == 'ingreso')
-        .fold(0, (sum, m) => sum + m.monto);
-  }
-
-  double get totalEgresos {
-    return _movimientos
-        .where((m) => m.tipo.toLowerCase() == 'egreso')
-        .fold(0, (sum, m) => sum + m.monto);
-  }
-
-  double get balance => totalIngresos - totalEgresos;
-
-  // Obtener categorías desde Google Sheets
-  Future<List<String>> obtenerCategorias() async {
-    return await _sheetsService.obtenerCategorias();
-  }
-
-  // Obtener grupos desde Google Sheets
-  Future<List<String>> obtenerGrupos() async {
-    return await _sheetsService.obtenerGrupos();
-  }
-
-  // Editar un movimiento existente
-  Future<bool> editarMovimiento(int index, Movimiento movimientoEditado) async {
-    _isLoading = true;
+  Future<void> recargarDesdeBase() async {
+    _setLoading(true);
     _error = null;
-    notifyListeners();
 
     try {
-      // Editar en Google Sheets
-      final success = await _sheetsService.editarMovimiento(
-        index,
-        movimientoEditado,
+      await _recargarTodo();
+      await _syncCoordinator.attemptSync();
+    } catch (e) {
+      _error = 'Error al recargar datos locales: $e';
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<bool> agregarMovimiento({
+    required TipoMovimiento tipo,
+    required String categoriaId,
+    required String? grupoId,
+    required String concepto,
+    required int amountCents,
+    required DateTime occurredAt,
+  }) async {
+    return _runMutation(() async {
+      await _movimientosRepository.crearMovimiento(
+        MovimientoDraft(
+          tipo: tipo,
+          categoriaId: categoriaId,
+          grupoId: grupoId,
+          concepto: concepto,
+          amountCents: amountCents,
+          occurredAt: occurredAt,
+        ),
       );
+      await _recargarTodo();
+    }, fallbackError: 'No se pudo guardar el movimiento.');
+  }
 
-      if (success) {
-        // Actualizar localmente
-        _movimientos[index] = movimientoEditado;
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      } else {
-        _error = 'No se pudo editar el movimiento';
-        _isLoading = false;
-        notifyListeners();
-        return false;
+  Future<bool> editarMovimiento({
+    required String id,
+    required TipoMovimiento tipo,
+    required String categoriaId,
+    required String? grupoId,
+    required String concepto,
+    required int amountCents,
+    required DateTime occurredAt,
+  }) async {
+    return _runMutation(() async {
+      await _movimientosRepository.actualizarMovimiento(
+        id,
+        MovimientoDraft(
+          tipo: tipo,
+          categoriaId: categoriaId,
+          grupoId: grupoId,
+          concepto: concepto,
+          amountCents: amountCents,
+          occurredAt: occurredAt,
+        ),
+      );
+      await _recargarTodo();
+    }, fallbackError: 'No se pudo actualizar el movimiento.');
+  }
+
+  Future<bool> eliminarMovimiento(String id) async {
+    return _runMutation(() async {
+      await _movimientosRepository.eliminarMovimiento(id);
+      await _recargarTodo();
+    }, fallbackError: 'No se pudo eliminar el movimiento.');
+  }
+
+  Future<bool> agregarCategoria(String nombre) async {
+    return _runMutation(() async {
+      await _catalogosRepository.crearCategoria(nombre);
+      await _recargarCatalogos();
+    }, fallbackError: 'No se pudo agregar la categoría.');
+  }
+
+  Future<bool> editarCategoria(String id, String nombre) async {
+    return _runMutation(() async {
+      await _catalogosRepository.actualizarCategoria(id, nombre);
+      await _recargarTodo();
+    }, fallbackError: 'No se pudo actualizar la categoría.');
+  }
+
+  Future<bool> eliminarCategoria(String id) async {
+    return _runMutation(() async {
+      await _catalogosRepository.eliminarCategoria(id);
+      await _recargarTodo();
+    }, fallbackError: 'No se pudo eliminar la categoría.');
+  }
+
+  Future<bool> agregarGrupo(String nombre) async {
+    return _runMutation(() async {
+      await _catalogosRepository.crearGrupo(nombre);
+      await _recargarCatalogos();
+    }, fallbackError: 'No se pudo agregar el grupo.');
+  }
+
+  Future<bool> editarGrupo(String id, String nombre) async {
+    return _runMutation(() async {
+      await _catalogosRepository.actualizarGrupo(id, nombre);
+      await _recargarTodo();
+    }, fallbackError: 'No se pudo actualizar el grupo.');
+  }
+
+  Future<bool> eliminarGrupo(String id) async {
+    return _runMutation(() async {
+      await _catalogosRepository.eliminarGrupo(id);
+      await _recargarTodo();
+    }, fallbackError: 'No se pudo eliminar el grupo.');
+  }
+
+  Categoria? buscarCategoriaPorId(String id) {
+    for (final categoria in _categorias) {
+      if (categoria.id == id) {
+        return categoria;
       }
+    }
+    return null;
+  }
+
+  Grupo? buscarGrupoPorId(String id) {
+    for (final grupo in _grupos) {
+      if (grupo.id == id) {
+        return grupo;
+      }
+    }
+    return null;
+  }
+
+  String generarIdTemporal() => _uuid.v4();
+
+  Future<void> _recargarTodo() async {
+    await Future.wait([_recargarMovimientos(), _recargarCatalogos()]);
+    _resumen = await _movimientosRepository.obtenerResumen();
+    notifyListeners();
+  }
+
+  Future<void> _recargarMovimientos() async {
+    _movimientos = await _movimientosRepository.obtenerMovimientos();
+  }
+
+  Future<void> _recargarCatalogos() async {
+    final categorias = await _catalogosRepository.obtenerCategorias();
+    final grupos = await _catalogosRepository.obtenerGrupos();
+    _categorias = categorias;
+    _grupos = grupos;
+  }
+
+  Future<bool> _runMutation(
+    Future<void> Function() action, {
+    required String fallbackError,
+  }) async {
+    _setLoading(true);
+    _error = null;
+
+    try {
+      await action();
+      return true;
     } catch (e) {
-      _error = 'Error al editar movimiento: $e';
-      _isLoading = false;
+      _error = e is StateError ? e.message : fallbackError;
       notifyListeners();
       return false;
+    } finally {
+      _setLoading(false);
     }
   }
 
-  // Eliminar un movimiento
-  Future<bool> eliminarMovimiento(int index) async {
-    _isLoading = true;
-    _error = null;
+  void _setLoading(bool value) {
+    _isLoading = value;
     notifyListeners();
-
-    try {
-      // Eliminar en Google Sheets
-      final success = await _sheetsService.eliminarMovimiento(index);
-
-      if (success) {
-        // Eliminar localmente
-        _movimientos.removeAt(index);
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      } else {
-        _error = 'No se pudo eliminar el movimiento';
-        _isLoading = false;
-        notifyListeners();
-        return false;
-      }
-    } catch (e) {
-      _error = 'Error al eliminar movimiento: $e';
-      _isLoading = false;
-      notifyListeners();
-      return false;
-    }
   }
 }

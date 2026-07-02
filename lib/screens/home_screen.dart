@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import '../providers/movimientos_provider.dart';
+import 'package:provider/provider.dart';
+
+import '../models/categoria.dart';
 import '../models/movimiento.dart';
+import '../providers/movimientos_provider.dart';
 import 'agregar_movimiento_screen.dart';
 import 'editar_movimiento_screen.dart';
+import 'gestion_catalogos_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -14,170 +17,200 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  String? _categoriaFiltro; // null = Todas las categorías
-  List<String> _categorias = [];
-  bool _isLoadingCategorias = true;
+  String? _categoriaFiltroId;
 
   @override
   void initState() {
     super.initState();
-    // Inicializar el provider al cargar la pantalla
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<MovimientosProvider>(context, listen: false).init();
-      _cargarCategorias();
+      context.read<MovimientosProvider>().init();
     });
-  }
-
-  Future<void> _cargarCategorias() async {
-    setState(() {
-      _isLoadingCategorias = true;
-    });
-
-    try {
-      final provider = Provider.of<MovimientosProvider>(context, listen: false);
-      final categorias = await provider.obtenerCategorias();
-
-      setState(() {
-        _categorias = categorias;
-        _isLoadingCategorias = false;
-      });
-    } catch (e) {
-      print('Error al cargar categorías: $e');
-      setState(() {
-        _isLoadingCategorias = false;
-      });
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[100],
-      appBar: AppBar(
-        title: const Text(
-          'Mis Finanzas',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: Colors.teal,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              Provider.of<MovimientosProvider>(
+    return Consumer<MovimientosProvider>(
+      builder: (context, provider, child) {
+        final movimientosFiltrados = _filterMovimientos(
+          provider.movimientos,
+          _categoriaFiltroId,
+        );
+
+        return Scaffold(
+          backgroundColor: Colors.grey[100],
+          appBar: AppBar(
+            title: const Text(
+              'Mis Finanzas',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            backgroundColor: Colors.teal,
+            foregroundColor: Colors.white,
+            actions: [
+              IconButton(
+                tooltip: 'Administrar categorías y grupos',
+                icon: const Icon(Icons.tune),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const GestionCatalogosScreen(),
+                    ),
+                  );
+                },
+              ),
+              IconButton(
+                tooltip: 'Recargar base local',
+                icon: const Icon(Icons.refresh),
+                onPressed: provider.recargarDesdeBase,
+              ),
+            ],
+          ),
+          body: _buildBody(provider, movimientosFiltrados),
+          floatingActionButton: FloatingActionButton.extended(
+            onPressed: () async {
+              final result = await Navigator.push<bool>(
                 context,
-                listen: false,
-              ).cargarMovimientos();
+                MaterialPageRoute(
+                  builder: (_) => const AgregarMovimientoScreen(),
+                ),
+              );
+
+              if (result == true && context.mounted) {
+                await context.read<MovimientosProvider>().recargarDesdeBase();
+              }
             },
+            backgroundColor: Colors.teal,
+            foregroundColor: Colors.white,
+            icon: const Icon(Icons.add),
+            label: const Text('Nuevo'),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBody(
+    MovimientosProvider provider,
+    List<Movimiento> movimientosFiltrados,
+  ) {
+    if (!provider.isInitialized && provider.isLoading) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Preparando base local...'),
+          ],
+        ),
+      );
+    }
+
+    if (!provider.isInitialized && provider.error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+              const SizedBox(height: 16),
+              const Text(
+                'No se pudo iniciar la app',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(provider.error!, textAlign: TextAlign.center),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: provider.init,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Reintentar'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: provider.recargarDesdeBase,
+      child: Column(
+        children: [
+          _buildSyncBanner(provider),
+          _buildResumenCard(provider),
+          _buildFiltroCategoria(provider.categorias),
+          if (provider.error != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: MaterialBanner(
+                content: Text(provider.error!),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      provider.recargarDesdeBase();
+                    },
+                    child: const Text('Recargar'),
+                  ),
+                ],
+              ),
+            ),
+          Expanded(
+            child:
+                movimientosFiltrados.isEmpty
+                    ? _buildEmptyState(provider.movimientos.isEmpty)
+                    : _buildMovimientosList(movimientosFiltrados),
           ),
         ],
       ),
-      body: Consumer<MovimientosProvider>(
-        builder: (context, provider, child) {
-          if (!provider.isInitialized && provider.isLoading) {
-            return const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Conectando con Google Sheets...'),
-                ],
-              ),
-            );
-          }
+    );
+  }
 
-          if (provider.error != null) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Error',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.red[700],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      provider.error!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                    const SizedBox(height: 24),
-                    ElevatedButton.icon(
-                      onPressed: () => provider.init(),
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Reintentar'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.teal,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-
-          return RefreshIndicator(
-            onRefresh: () => provider.cargarMovimientos(),
-            child: Column(
-              children: [
-                // Tarjeta de resumen
-                _buildResumenCard(provider),
-
-                // Filtro por categoría
-                _buildFiltroCategoria(),
-
-                // Lista de movimientos
-                Expanded(
-                  child:
-                      provider.movimientos.isEmpty
-                          ? _buildEmptyState()
-                          : _buildMovimientosList(provider),
-                ),
-              ],
-            ),
-          );
-        },
+  Widget _buildSyncBanner(MovimientosProvider provider) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color:
+            provider.isRemoteSyncEnabled
+                ? Colors.blue.shade50
+                : Colors.amber.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color:
+              provider.isRemoteSyncEnabled
+                  ? Colors.blue.shade200
+                  : Colors.amber.shade300,
+        ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const AgregarMovimientoScreen(),
+      child: Row(
+        children: [
+          Icon(
+            provider.isRemoteSyncEnabled
+                ? Icons.cloud_queue
+                : Icons.phone_iphone,
+            color:
+                provider.isRemoteSyncEnabled
+                    ? Colors.blue.shade700
+                    : Colors.amber.shade800,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              provider.isRemoteSyncEnabled
+                  ? 'Sync remoto preparado. La autenticación aún no está activa.'
+                  : 'Modo local activo. Todo se guarda en SQLite del dispositivo.',
             ),
-          );
-
-          if (result == true) {
-            // Recargar la lista si se agregó un movimiento
-            if (context.mounted) {
-              Provider.of<MovimientosProvider>(
-                context,
-                listen: false,
-              ).cargarMovimientos();
-            }
-          }
-        },
-        backgroundColor: Colors.teal,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
-        label: const Text('Nuevo'),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildResumenCard(MovimientosProvider provider) {
     final currencyFormat = NumberFormat.currency(
+      locale: 'es_BO',
       symbol: '\$',
       decimalDigits: 2,
     );
@@ -187,16 +220,16 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [Colors.teal[400]!, Colors.teal[700]!],
+          colors: [Colors.teal.shade400, Colors.teal.shade700],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.teal.withOpacity(0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
+            color: Colors.teal.withValues(alpha: 0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
@@ -209,13 +242,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 'Ingresos',
                 currencyFormat.format(provider.totalIngresos),
                 Icons.arrow_upward,
-                Colors.green[100]!,
+                Colors.green.shade100,
               ),
               _buildResumenItem(
                 'Egresos',
                 currencyFormat.format(provider.totalEgresos),
                 Icons.arrow_downward,
-                Colors.red[100]!,
+                Colors.red.shade100,
               ),
             ],
           ),
@@ -233,17 +266,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               Text(
                 currencyFormat.format(provider.balance),
-                style: TextStyle(
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
-                  shadows: [
-                    Shadow(
-                      color: Colors.black.withOpacity(0.3),
-                      offset: const Offset(0, 2),
-                      blurRadius: 4,
-                    ),
-                  ],
                 ),
               ),
             ],
@@ -287,7 +313,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildFiltroCategoria() {
+  Widget _buildFiltroCategoria(List<Categoria> categorias) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -296,7 +322,7 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: Colors.grey.withValues(alpha: 0.1),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -316,60 +342,52 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child:
-                _isLoadingCategorias
-                    ? const Center(
-                      child: SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    )
-                    : DropdownButton<String?>(
-                      value: _categoriaFiltro,
-                      isExpanded: true,
-                      underline: Container(),
-                      hint: const Text('Todas las categorías'),
-                      items: [
-                        const DropdownMenuItem<String?>(
-                          value: null,
-                          child: Text(
-                            'Todas las categorías',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        ..._categorias.map(
-                          (categoria) => DropdownMenuItem<String?>(
-                            value: categoria,
-                            child: Text(categoria),
-                          ),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        setState(() {
-                          _categoriaFiltro = value;
-                        });
-                      },
-                    ),
+            child: DropdownButton<String?>(
+              value: _categoriaFiltroId,
+              isExpanded: true,
+              underline: const SizedBox.shrink(),
+              hint: const Text('Todas las categorías'),
+              items: [
+                const DropdownMenuItem<String?>(
+                  value: null,
+                  child: Text('Todas las categorías'),
+                ),
+                ...categorias.map(
+                  (categoria) => DropdownMenuItem<String?>(
+                    value: categoria.id,
+                    child: Text(categoria.nombre),
+                  ),
+                ),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _categoriaFiltroId = value;
+                });
+              },
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(bool noHayMovimientos) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            Icons.account_balance_wallet_outlined,
+            noHayMovimientos
+                ? Icons.account_balance_wallet_outlined
+                : Icons.search_off,
             size: 80,
             color: Colors.grey[400],
           ),
           const SizedBox(height: 16),
           Text(
-            'No hay movimientos registrados',
+            noHayMovimientos
+                ? 'No hay movimientos registrados'
+                : 'No hay movimientos para este filtro',
             style: TextStyle(
               fontSize: 18,
               color: Colors.grey[600],
@@ -378,7 +396,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Agrega tu primer movimiento',
+            noHayMovimientos
+                ? 'Agrega tu primer movimiento'
+                : 'Prueba con otra categoría',
             style: TextStyle(fontSize: 14, color: Colors.grey[500]),
           ),
         ],
@@ -386,128 +406,46 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildMovimientosList(MovimientosProvider provider) {
-    // Filtrar movimientos según la categoría seleccionada
-    final movimientosFiltrados =
-        _categoriaFiltro == null
-            ? provider.movimientos
-            : provider.movimientos
-                .where((m) => m.categoria == _categoriaFiltro)
-                .toList();
-
-    // Si no hay movimientos después del filtro
-    if (movimientosFiltrados.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.search_off, size: 80, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            Text(
-              'No hay movimientos',
-              style: TextStyle(
-                fontSize: 18,
-                color: Colors.grey[600],
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'para la categoría "$_categoriaFiltro"',
-              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            TextButton.icon(
-              onPressed: () {
-                setState(() {
-                  _categoriaFiltro = null;
-                });
-              },
-              icon: const Icon(Icons.clear),
-              label: const Text('Limpiar filtro'),
-            ),
-          ],
-        ),
-      );
-    }
-
+  Widget _buildMovimientosList(List<Movimiento> movimientos) {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: movimientosFiltrados.length,
+      itemCount: movimientos.length,
       itemBuilder: (context, index) {
-        final movimiento = movimientosFiltrados[index];
-        // Obtener el índice real del movimiento en la lista completa
-        final realIndex = provider.movimientos.indexOf(movimiento);
-        return _buildMovimientoCard(movimiento, realIndex);
+        final movimiento = movimientos[index];
+        return _buildMovimientoCard(movimiento);
       },
     );
   }
 
-  Widget _buildMovimientoCard(Movimiento movimiento, int index) {
+  Widget _buildMovimientoCard(Movimiento movimiento) {
     final currencyFormat = NumberFormat.currency(
+      locale: 'es_BO',
       symbol: '\$',
       decimalDigits: 2,
     );
-    final isIngreso = movimiento.tipo.toLowerCase() == 'ingreso';
 
     return Dismissible(
-      key: Key('${movimiento.fecha}_${movimiento.concepto}_$index'),
-      background: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: Colors.blue,
-          borderRadius: BorderRadius.circular(12),
-        ),
+      key: Key(movimiento.id),
+      background: _buildSwipeBackground(
         alignment: Alignment.centerLeft,
+        color: Colors.blue,
+        icon: Icons.edit,
+        label: 'Editar',
         padding: const EdgeInsets.only(left: 20),
-        child: const Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.edit, color: Colors.white, size: 32),
-            SizedBox(height: 4),
-            Text(
-              'Editar',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
       ),
-      secondaryBackground: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: Colors.red,
-          borderRadius: BorderRadius.circular(12),
-        ),
+      secondaryBackground: _buildSwipeBackground(
         alignment: Alignment.centerRight,
+        color: Colors.red,
+        icon: Icons.delete,
+        label: 'Eliminar',
         padding: const EdgeInsets.only(right: 20),
-        child: const Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.delete, color: Colors.white, size: 32),
-            SizedBox(height: 4),
-            Text(
-              'Eliminar',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
       ),
       confirmDismiss: (direction) async {
         if (direction == DismissDirection.startToEnd) {
-          // Deslizar de izquierda a derecha: Editar
-          await _editarMovimiento(movimiento, index);
-          return false; // No eliminar el item
-        } else {
-          // Deslizar de derecha a izquierda: Eliminar
-          return await _confirmarEliminar(movimiento, index);
+          await _editarMovimiento(movimiento);
+          return false;
         }
+        return _confirmarEliminar(movimiento);
       },
       child: Card(
         margin: const EdgeInsets.only(bottom: 12),
@@ -515,34 +453,30 @@ class _HomeScreenState extends State<HomeScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: () {
-            // Mostrar detalles completos
-            _mostrarDetalles(movimiento);
-          },
-          onLongPress: () {
-            // Long press para editar
-            _editarMovimiento(movimiento, index);
-          },
+          onTap: () => _mostrarDetalles(movimiento),
+          onLongPress: () => _editarMovimiento(movimiento),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                // Ícono según el tipo
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: isIngreso ? Colors.green[50] : Colors.red[50],
+                    color:
+                        movimiento.isIngreso
+                            ? Colors.green[50]
+                            : Colors.red[50],
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
-                    isIngreso ? Icons.arrow_upward : Icons.arrow_downward,
-                    color: isIngreso ? Colors.green : Colors.red,
+                    movimiento.isIngreso
+                        ? Icons.arrow_upward
+                        : Icons.arrow_downward,
+                    color: movimiento.isIngreso ? Colors.green : Colors.red,
                     size: 24,
                   ),
                 ),
                 const SizedBox(width: 16),
-
-                // Información del movimiento
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -557,41 +491,23 @@ class _HomeScreenState extends State<HomeScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 4),
-                      Row(
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[200],
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              movimiento.categoria,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey[700],
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
+                          _InfoChip(
+                            label:
+                                movimiento.categoriaNombre ?? 'Sin categoría',
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            movimiento.fecha,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                            ),
-                          ),
+                          _InfoChip(label: movimiento.fecha),
+                          if ((movimiento.grupoNombre ?? '').isNotEmpty)
+                            _InfoChip(label: movimiento.grupoNombre!),
                         ],
                       ),
                     ],
                   ),
                 ),
-
-                // Monto
+                const SizedBox(width: 12),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -600,14 +516,17 @@ class _HomeScreenState extends State<HomeScreen> {
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: isIngreso ? Colors.green[700] : Colors.red[700],
+                        color:
+                            movimiento.isIngreso
+                                ? Colors.green[700]
+                                : Colors.red[700],
                       ),
                     ),
-                    if (movimiento.grupo.isNotEmpty)
-                      Text(
-                        movimiento.grupo,
-                        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                      ),
+                    const SizedBox(height: 4),
+                    Text(
+                      movimiento.syncStatus.label,
+                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                    ),
                   ],
                 ),
               ],
@@ -618,145 +537,160 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _editarMovimiento(Movimiento movimiento, int index) async {
-    final result = await Navigator.push(
+  Widget _buildSwipeBackground({
+    required Alignment alignment,
+    required Color color,
+    required IconData icon,
+    required String label,
+    required EdgeInsets padding,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      alignment: alignment,
+      padding: padding,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: Colors.white, size: 32),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editarMovimiento(Movimiento movimiento) async {
+    final result = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder:
-            (context) =>
-                EditarMovimientoScreen(movimiento: movimiento, index: index),
+        builder: (_) => EditarMovimientoScreen(movimiento: movimiento),
       ),
     );
 
-    if (result == true) {
-      // Recargar la lista si se editó o eliminó el movimiento
-      if (mounted) {
-        Provider.of<MovimientosProvider>(
-          context,
-          listen: false,
-        ).cargarMovimientos();
-      }
+    if (result == true && mounted) {
+      await context.read<MovimientosProvider>().recargarDesdeBase();
     }
   }
 
-  Future<bool> _confirmarEliminar(Movimiento movimiento, int index) async {
+  Future<bool> _confirmarEliminar(Movimiento movimiento) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Confirmar eliminación'),
-            content: Text(
-              '¿Estás seguro de que deseas eliminar "${movimiento.concepto}"?\n\nEsta acción no se puede deshacer.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Eliminar'),
-              ),
-            ],
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Confirmar eliminación'),
+          content: Text(
+            '¿Estás seguro de que deseas eliminar "${movimiento.concepto}"?\n\nEsta acción no se puede deshacer.',
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Eliminar'),
+            ),
+          ],
+        );
+      },
     );
 
-    if (confirmed == true) {
-      final provider = Provider.of<MovimientosProvider>(context, listen: false);
-      final success = await provider.eliminarMovimiento(index);
+    if (confirmed != true) {
+      return false;
+    }
 
-      if (mounted) {
-        if (success) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Row(
-                children: [
-                  Icon(Icons.check_circle, color: Colors.white),
-                  SizedBox(width: 12),
-                  Text('Movimiento eliminado exitosamente'),
-                ],
-              ),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Row(
-                children: [
-                  Icon(Icons.error, color: Colors.white),
-                  SizedBox(width: 12),
-                  Text('Error al eliminar el movimiento'),
-                ],
-              ),
-              backgroundColor: Colors.red,
-              duration: Duration(seconds: 3),
-            ),
-          );
-        }
-      }
+    if (!mounted) {
+      return false;
+    }
 
+    final provider = context.read<MovimientosProvider>();
+    final success = await provider.eliminarMovimiento(movimiento.id);
+
+    if (!mounted) {
       return success;
     }
 
-    return false;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          success
+              ? 'Movimiento eliminado exitosamente'
+              : (provider.error ?? 'Error al eliminar el movimiento'),
+        ),
+        backgroundColor: success ? Colors.green : Colors.red,
+      ),
+    );
+
+    return success;
   }
 
   void _mostrarDetalles(Movimiento movimiento) {
     final currencyFormat = NumberFormat.currency(
+      locale: 'es_BO',
       symbol: '\$',
       decimalDigits: 2,
     );
 
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder:
-          (context) => Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Detalles del Movimiento',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-                const Divider(),
-                const SizedBox(height: 16),
-                _buildDetalleRow('Concepto', movimiento.concepto),
-                _buildDetalleRow(
-                  'Monto',
-                  currencyFormat.format(movimiento.monto),
-                ),
-                _buildDetalleRow('Tipo', movimiento.tipo),
-                _buildDetalleRow('Categoría', movimiento.categoria),
-                _buildDetalleRow('Fecha', movimiento.fecha),
-                _buildDetalleRow('Mes', movimiento.mes),
-                _buildDetalleRow('Grupo', movimiento.grupo),
-                const SizedBox(height: 16),
-              ],
-            ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Detalles del Movimiento',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const Divider(),
+              const SizedBox(height: 16),
+              _buildDetalleRow('Concepto', movimiento.concepto),
+              _buildDetalleRow(
+                'Monto',
+                currencyFormat.format(movimiento.monto),
+              ),
+              _buildDetalleRow('Tipo', movimiento.tipo.label),
+              _buildDetalleRow(
+                'Categoría',
+                movimiento.categoriaNombre ?? 'Sin categoría',
+              ),
+              _buildDetalleRow('Fecha', movimiento.fecha),
+              _buildDetalleRow('Mes', movimiento.mes),
+              _buildDetalleRow('Grupo', movimiento.grupoNombre ?? 'Sin grupo'),
+              _buildDetalleRow('Sync', movimiento.syncStatus.label),
+              const SizedBox(height: 16),
+            ],
           ),
+        );
+      },
     );
   }
 
@@ -767,7 +701,7 @@ class _HomeScreenState extends State<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 100,
+            width: 110,
             child: Text(
               label,
               style: TextStyle(
@@ -778,6 +712,43 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           Expanded(child: Text(value, style: const TextStyle(fontSize: 16))),
         ],
+      ),
+    );
+  }
+
+  List<Movimiento> _filterMovimientos(
+    List<Movimiento> movimientos,
+    String? categoriaId,
+  ) {
+    if (categoriaId == null) {
+      return movimientos;
+    }
+    return movimientos
+        .where((movimiento) => movimiento.categoriaId == categoriaId)
+        .toList();
+  }
+}
+
+class _InfoChip extends StatelessWidget {
+  const _InfoChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          color: Colors.grey[700],
+          fontWeight: FontWeight.w500,
+        ),
       ),
     );
   }
