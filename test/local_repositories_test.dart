@@ -56,6 +56,46 @@ void main() {
     expect(gruposRestantes.any((item) => item.id == grupo.id), isFalse);
   });
 
+  test(
+    'elimina una categoria usada sin perder movimientos historicos',
+    () async {
+      final categoria = await catalogosRepository.crearCategoria('Mascotas');
+      final movimiento = await movimientosRepository.crearMovimiento(
+        MovimientoDraft(
+          tipo: TipoMovimiento.egreso,
+          categoriaId: categoria.id,
+          grupoId: null,
+          concepto: 'Vacunas',
+          amountCents: 20000,
+          occurredAt: DateTime(2026, 6, 5),
+        ),
+      );
+
+      await catalogosRepository.eliminarCategoria(categoria.id);
+
+      final categorias = await catalogosRepository.obtenerCategorias();
+      final movimientos = await movimientosRepository.obtenerMovimientos();
+
+      expect(categorias.any((item) => item.id == categoria.id), isFalse);
+      expect(movimientos.single.id, movimiento.id);
+      expect(movimientos.single.categoriaNombre, 'Mascotas');
+
+      await expectLater(
+        movimientosRepository.crearMovimiento(
+          MovimientoDraft(
+            tipo: TipoMovimiento.egreso,
+            categoriaId: categoria.id,
+            grupoId: null,
+            concepto: 'Alimento',
+            amountCents: 15000,
+            occurredAt: DateTime(2026, 6, 6),
+          ),
+        ),
+        throwsStateError,
+      );
+    },
+  );
+
   test('crea, edita y elimina movimientos por id estable', () async {
     final categorias = await catalogosRepository.obtenerCategorias();
     final categoriaId = categorias.first.id;

@@ -189,51 +189,12 @@ class _GestionCatalogosScreenState extends State<GestionCatalogosScreen>
     required String title,
     required String initialValue,
   }) async {
-    final controller = TextEditingController(text: initialValue);
-    final formKey = GlobalKey<FormState>();
-
-    final result = await showDialog<String>(
+    return showDialog<String>(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(title),
-          content: Form(
-            key: formKey,
-            child: TextFormField(
-              controller: controller,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'Nombre',
-                border: OutlineInputBorder(),
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Ingresa un nombre';
-                }
-                return null;
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (formKey.currentState!.validate()) {
-                  Navigator.pop(context, controller.text.trim());
-                }
-              },
-              child: const Text('Guardar'),
-            ),
-          ],
-        );
-      },
+      builder:
+          (context) =>
+              _CatalogNameDialog(title: title, initialValue: initialValue),
     );
-
-    controller.dispose();
-    return result;
   }
 
   Future<bool> _confirmDelete({
@@ -280,6 +241,71 @@ class _GestionCatalogosScreenState extends State<GestionCatalogosScreen>
   }
 }
 
+class _CatalogNameDialog extends StatefulWidget {
+  const _CatalogNameDialog({required this.title, required this.initialValue});
+
+  final String title;
+  final String initialValue;
+
+  @override
+  State<_CatalogNameDialog> createState() => _CatalogNameDialogState();
+}
+
+class _CatalogNameDialogState extends State<_CatalogNameDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: Form(
+        key: _formKey,
+        child: TextFormField(
+          controller: _controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Nombre',
+            border: OutlineInputBorder(),
+          ),
+          validator: (value) {
+            if (value == null || value.trim().isEmpty) {
+              return 'Ingresa un nombre';
+            }
+            return null;
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            if (_formKey.currentState!.validate()) {
+              Navigator.pop(context, _controller.text.trim());
+            }
+          },
+          child: const Text('Guardar'),
+        ),
+      ],
+    );
+  }
+}
+
 class _CatalogList<T> extends StatelessWidget {
   const _CatalogList({
     required this.items,
@@ -311,10 +337,22 @@ class _CatalogList<T> extends StatelessWidget {
           child: ListTile(
             title: Text(getTitle(item)),
             onTap: () => onEdit(item),
-            trailing: IconButton(
-              icon: const Icon(Icons.delete_outline),
-              color: Colors.red,
-              onPressed: () => onDelete(item),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Editar',
+                  icon: const Icon(Icons.edit_outlined),
+                  color: Colors.teal,
+                  onPressed: () => onEdit(item),
+                ),
+                IconButton(
+                  tooltip: 'Eliminar',
+                  icon: const Icon(Icons.delete_outline),
+                  color: Colors.red,
+                  onPressed: () => onDelete(item),
+                ),
+              ],
             ),
           ),
         );

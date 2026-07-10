@@ -197,26 +197,19 @@ class LocalCatalogosRepository implements CatalogosRepository {
 
   @override
   Future<void> eliminarCategoria(String id) async {
-    final usageCount = await _countMovementsUsingCategory(id);
-    if (usageCount > 0) {
-      throw StateError(
-        'No puedes eliminar una categoría que ya está asociada a movimientos.',
-      );
+    final current = await _findCategory(id);
+    if (current.deletedAt != null) {
+      throw StateError('La categoría no existe.');
     }
 
-    final current = await _findCategory(id);
     final now = DateTime.now();
-    final nextStatus =
-        current.syncStatus == 'pendingCreate'
-            ? 'pendingDelete'
-            : 'pendingDelete';
 
     await (_database.update(_database.categories)
       ..where((tbl) => tbl.id.equals(id))).write(
       CategoriesCompanion(
         deletedAt: Value(now),
         updatedAt: Value(now),
-        syncStatus: Value(nextStatus),
+        syncStatus: const Value('pendingDelete'),
       ),
     );
 
@@ -230,26 +223,19 @@ class LocalCatalogosRepository implements CatalogosRepository {
 
   @override
   Future<void> eliminarGrupo(String id) async {
-    final usageCount = await _countMovementsUsingGroup(id);
-    if (usageCount > 0) {
-      throw StateError(
-        'No puedes eliminar un grupo que ya está asociado a movimientos.',
-      );
+    final current = await _findGroup(id);
+    if (current.deletedAt != null) {
+      throw StateError('El grupo no existe.');
     }
 
-    final current = await _findGroup(id);
     final now = DateTime.now();
-    final nextStatus =
-        current.syncStatus == 'pendingCreate'
-            ? 'pendingDelete'
-            : 'pendingDelete';
 
     await (_database.update(_database.movementGroups)
       ..where((tbl) => tbl.id.equals(id))).write(
       MovementGroupsCompanion(
         deletedAt: Value(now),
         updatedAt: Value(now),
-        syncStatus: Value(nextStatus),
+        syncStatus: const Value('pendingDelete'),
       ),
     );
 
@@ -313,30 +299,6 @@ class LocalCatalogosRepository implements CatalogosRepository {
       throw StateError('El grupo no existe.');
     }
     return row;
-  }
-
-  Future<int> _countMovementsUsingCategory(String categoryId) async {
-    final query =
-        _database.selectOnly(_database.movements)
-          ..addColumns([_database.movements.id.count()])
-          ..where(
-            _database.movements.categoriaId.equals(categoryId) &
-                _database.movements.deletedAt.isNull(),
-          );
-    final row = await query.getSingle();
-    return row.read(_database.movements.id.count()) ?? 0;
-  }
-
-  Future<int> _countMovementsUsingGroup(String groupId) async {
-    final query =
-        _database.selectOnly(_database.movements)
-          ..addColumns([_database.movements.id.count()])
-          ..where(
-            _database.movements.grupoId.equals(groupId) &
-                _database.movements.deletedAt.isNull(),
-          );
-    final row = await query.getSingle();
-    return row.read(_database.movements.id.count()) ?? 0;
   }
 
   String _normalizeName(String rawName) {

@@ -31,9 +31,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Consumer<MovimientosProvider>(
       builder: (context, provider, child) {
+        final categoriaFiltroId = _validCategoriaFiltroId(provider.categorias);
         final movimientosFiltrados = _filterMovimientos(
           provider.movimientos,
-          _categoriaFiltroId,
+          categoriaFiltroId,
         );
 
         return Scaffold(
@@ -65,7 +66,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-          body: _buildBody(provider, movimientosFiltrados),
+          body: _buildBody(provider, movimientosFiltrados, categoriaFiltroId),
           floatingActionButton: FloatingActionButton.extended(
             onPressed: () async {
               final result = await Navigator.push<bool>(
@@ -92,6 +93,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildBody(
     MovimientosProvider provider,
     List<Movimiento> movimientosFiltrados,
+    String? categoriaFiltroId,
   ) {
     if (!provider.isInitialized && provider.isLoading) {
       return const Center(
@@ -139,7 +141,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           _buildSyncBanner(provider),
           _buildResumenCard(provider),
-          _buildFiltroCategoria(provider.categorias),
+          _buildFiltroCategoria(provider.categorias, categoriaFiltroId),
           if (provider.error != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -313,7 +315,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildFiltroCategoria(List<Categoria> categorias) {
+  Widget _buildFiltroCategoria(
+    List<Categoria> categorias,
+    String? categoriaFiltroId,
+  ) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -343,7 +348,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(width: 12),
           Expanded(
             child: DropdownButton<String?>(
-              value: _categoriaFiltroId,
+              value: categoriaFiltroId,
               isExpanded: true,
               underline: const SizedBox.shrink(),
               hint: const Text('Todas las categorías'),
@@ -726,6 +731,17 @@ class _HomeScreenState extends State<HomeScreen> {
     return movimientos
         .where((movimiento) => movimiento.categoriaId == categoriaId)
         .toList();
+  }
+
+  String? _validCategoriaFiltroId(List<Categoria> categorias) {
+    final current = _categoriaFiltroId;
+    if (current == null) {
+      return null;
+    }
+
+    return categorias.any((categoria) => categoria.id == current)
+        ? current
+        : null;
   }
 }
 
