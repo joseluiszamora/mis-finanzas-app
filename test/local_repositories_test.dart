@@ -7,6 +7,7 @@ import 'package:finanzas/data/repositories/catalogos_repository.dart';
 import 'package:finanzas/data/repositories/movimientos_repository.dart';
 import 'package:finanzas/data/sync/supabase_sync_service.dart';
 import 'package:finanzas/data/sync/sync_coordinator.dart';
+import 'package:finanzas/data/sync/sync_types.dart';
 import 'package:finanzas/models/tipo_movimiento.dart';
 
 void main() {
@@ -192,18 +193,217 @@ void main() {
       'delete',
     ]);
   });
+
+  test('prepara primer sync y vacia la cola al subir datos locales', () async {
+    final remote = _FakeRemoteSyncService();
+    syncCoordinator = _buildSyncCoordinator(
+      database,
+      environment: const AppEnvironment(
+        enableRemoteSync: true,
+        supabaseUrl: 'https://example.supabase.co',
+        supabaseAnonKey: 'anon',
+        googleClientId: '',
+        googleServerClientId: '',
+      ),
+      remoteService: remote,
+    );
+
+    await syncCoordinator.setCurrentUserId('user-1');
+    await syncCoordinator.prepareInitialSyncForSignedInUser();
+
+    final queuedBefore = await database.select(database.syncQueueEntries).get();
+    expect(queuedBefore, isNotEmpty);
+
+    await syncCoordinator.synchronizeNow();
+
+    final queuedAfter = await database.select(database.syncQueueEntries).get();
+    final categorias = await database.select(database.categories).get();
+    final grupos = await database.select(database.movementGroups).get();
+
+    expect(queuedAfter, isEmpty);
+    expect(categorias.every((item) => item.syncStatus == 'synced'), isTrue);
+    expect(grupos.every((item) => item.syncStatus == 'synced'), isTrue);
+    expect(remote.operations.first.startsWith('category:'), isTrue);
+    expect(remote.operations.last.startsWith('group:'), isTrue);
+  });
+
+  test('pull incremental inserta cambios remotos nuevos', () async {
+    final remote = _FakeRemoteSyncService(
+      changes: RemoteChanges(
+        categories: [
+          RemoteCategoryRow(
+            id: 'remote-category-1',
+            name: 'Remota',
+            createdAt: DateTime.utc(2026, 7, 1),
+            updatedAt: DateTime.utc(2026, 7, 1, 1),
+            deletedAt: null,
+          ),
+        ],
+        groups: const [],
+        movements: const [],
+      ),
+    );
+    syncCoordinator = _buildSyncCoordinator(
+      database,
+      environment: const AppEnvironment(
+        enableRemoteSync: true,
+        supabaseUrl: 'https://example.supabase.co',
+        supabaseAnonKey: 'anon',
+        googleClientId: '',
+        googleServerClientId: '',
+      ),
+      remoteService: remote,
+    );
+
+    await syncCoordinator.setCurrentUserId('user-1');
+    await syncCoordinator.pullRemoteChanges();
+
+    final categorias = await database.select(database.categories).get();
+    expect(
+      categorias.any(
+        (item) =>
+            item.id == 'remote-category-1' &&
+            item.name == 'Remota' &&
+            item.syncStatus == 'synced',
+      ),
+      isTrue,
+    );
+  });
+
+  test(
+    'pull no sobrescribe entidades con mutaciones locales pendientes',
+    () async {
+      final categoria = await catalogosRepository.crearCategoria('Local');
+      final remote = _FakeRemoteSyncService(
+        changes: RemoteChanges(
+          categories: [
+            RemoteCategoryRow(
+              id: categoria.id,
+              name: 'Remota',
+              createdAt: categoria.createdAt,
+              updatedAt: categoria.updatedAt.add(const Duration(hours: 1)),
+              deletedAt: null,
+            ),
+          ],
+          groups: const [],
+          movements: const [],
+        ),
+      );
+      syncCoordinator = _buildSyncCoordinator(
+        database,
+        environment: const AppEnvironment(
+          enableRemoteSync: true,
+          supabaseUrl: 'https://example.supabase.co',
+          supabaseAnonKey: 'anon',
+          googleClientId: '',
+          googleServerClientId: '',
+        ),
+        remoteService: remote,
+      );
+
+      await syncCoordinator.setCurrentUserId('user-1');
+      await syncCoordinator.pullRemoteChanges();
+
+      final local =
+          await (database.select(database.categories)
+            ..where((tbl) => tbl.id.equals(categoria.id))).getSingle();
+      final cursor =
+          await (database.select(database.appSettings)..where(
+            (tbl) => tbl.key.equals('last_sync_categories_at'),
+          )).getSingleOrNull();
+
+      expect(local.name, 'Local');
+      expect(cursor, isNull);
+    },
+  );
 }
 
-SyncCoordinator _buildSyncCoordinator(AppDatabase database) {
-  const environment = AppEnvironment(
+SyncCoordinator _buildSyncCoordinator(
+  AppDatabase database, {
+  AppEnvironment environment = const AppEnvironment(
     enableRemoteSync: false,
     supabaseUrl: '',
     supabaseAnonKey: '',
-  );
-
+    googleClientId: '',
+    googleServerClientId: '',
+  ),
+  RemoteSyncService? remoteService,
+}) {
   return SyncCoordinator(
     database: database,
     environment: environment,
-    remoteService: const SupabaseSyncService(environment: environment),
+    remoteService:
+        remoteService ?? SupabaseSyncService(environment: environment),
   );
+}
+
+class _FakeRemoteSyncService implements RemoteSyncService {
+  _FakeRemoteSyncService({
+    this.changes = const RemoteChanges(
+      categories: [],
+      groups: [],
+      movements: [],
+    ),
+  });
+
+  final RemoteChanges changes;
+  final List<String> operations = [];
+
+  @override
+  Future<RemoteChanges> pullChanges({
+    required String ownerId,
+    required DateTime? lastCategoriesSyncAt,
+    required DateTime? lastGroupsSyncAt,
+    required DateTime? lastMovementsSyncAt,
+  }) async {
+    return changes;
+  }
+
+  @override
+  Future<void> upsertCategory({
+    required String ownerId,
+    required Category category,
+  }) async {
+    operations.add('category:upsert:${category.id}');
+  }
+
+  @override
+  Future<void> upsertGroup({
+    required String ownerId,
+    required MovementGroup group,
+  }) async {
+    operations.add('group:upsert:${group.id}');
+  }
+
+  @override
+  Future<void> upsertMovement({
+    required String ownerId,
+    required Movement movement,
+  }) async {
+    operations.add('movement:upsert:${movement.id}');
+  }
+
+  @override
+  Future<void> deleteCategory({
+    required String ownerId,
+    required Category category,
+  }) async {
+    operations.add('category:delete:${category.id}');
+  }
+
+  @override
+  Future<void> deleteGroup({
+    required String ownerId,
+    required MovementGroup group,
+  }) async {
+    operations.add('group:delete:${group.id}');
+  }
+
+  @override
+  Future<void> deleteMovement({
+    required String ownerId,
+    required Movement movement,
+  }) async {
+    operations.add('movement:delete:${movement.id}');
+  }
 }

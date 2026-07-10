@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "429348128857",
+    "project_id": "app-finanzas-2d88c",
+    "storage_bucket": "app-finanzas-2d88c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:429348128857:android:5a0b45960683791a6bc948",
+        "android_client_info": {
+          "package_name": "com.monval.finanzas"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "429348128857-l8tgkaqe3qnb94d9v67pgogfkn4ba43t.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.monval.finanzas",
+            "certificate_hash": "b44b1cc7e6767a236fe1acf9870d999ee8d97f16"
+          }
+        },
+        {
+          "client_id": "429348128857-ocpnlkuia6i2cg900ce4tqesg4tfhtjo.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCySe7h--BNYqIA7kY4EQLGb-nIJaKIhTA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "429348128857-ocpnlkuia6i2cg900ce4tqesg4tfhtjo.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

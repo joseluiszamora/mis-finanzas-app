@@ -4,11 +4,13 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config/app_environment.dart';
+import 'data/auth/auth_repository.dart';
 import 'data/local/app_database.dart';
 import 'data/repositories/catalogos_repository.dart';
 import 'data/repositories/movimientos_repository.dart';
 import 'data/sync/supabase_sync_service.dart';
 import 'data/sync/sync_coordinator.dart';
+import 'providers/auth_provider.dart';
 import 'providers/movimientos_provider.dart';
 import 'screens/home_screen.dart';
 
@@ -16,7 +18,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('es', null);
 
-  final environment = AppEnvironment.fromEnvironment();
+  final environment = await AppEnvironment.load();
   if (environment.canInitializeSupabase) {
     await Supabase.initialize(
       url: environment.supabaseUrl,
@@ -32,7 +34,7 @@ Future<void> main() async {
     environment: environment,
     remoteService: syncService,
   );
-  final provider = MovimientosProvider(
+  final movimientosProvider = MovimientosProvider(
     movimientosRepository: LocalMovimientosRepository(
       database: database,
       syncCoordinator: syncCoordinator,
@@ -43,19 +45,39 @@ Future<void> main() async {
     ),
     syncCoordinator: syncCoordinator,
   );
+  final authProvider = AuthProvider(
+    authRepository:
+        environment.canInitializeSupabase
+            ? SupabaseGoogleAuthRepository(environment: environment)
+            : LocalOnlyAuthRepository(),
+    syncCoordinator: syncCoordinator,
+  );
+  await authProvider.restoreSession();
 
-  runApp(MyApp(provider: provider));
+  runApp(
+    MyApp(movimientosProvider: movimientosProvider, authProvider: authProvider),
+  );
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key, required this.provider});
+  const MyApp({
+    super.key,
+    required this.movimientosProvider,
+    required this.authProvider,
+  });
 
-  final MovimientosProvider provider;
+  final MovimientosProvider movimientosProvider;
+  final AuthProvider authProvider;
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider<MovimientosProvider>.value(
-      value: provider,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
+        ChangeNotifierProvider<MovimientosProvider>.value(
+          value: movimientosProvider,
+        ),
+      ],
       child: MaterialApp(
         title: 'Mis Finanzas',
         debugShowCheckedModeBanner: false,

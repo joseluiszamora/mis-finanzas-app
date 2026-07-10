@@ -6,6 +6,7 @@ import '../../models/grupo.dart';
 import '../../models/sync_status.dart';
 import '../local/app_database.dart';
 import '../sync/sync_coordinator.dart';
+import '../sync/sync_types.dart';
 
 abstract class CatalogosRepository {
   Future<List<Categoria>> obtenerCategorias();

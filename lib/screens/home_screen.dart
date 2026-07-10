@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../models/categoria.dart';
 import '../models/movimiento.dart';
+import '../providers/auth_provider.dart';
 import '../providers/movimientos_provider.dart';
 import 'agregar_movimiento_screen.dart';
 import 'editar_movimiento_screen.dart';
@@ -29,8 +30,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<MovimientosProvider>(
-      builder: (context, provider, child) {
+    return Consumer2<AuthProvider, MovimientosProvider>(
+      builder: (context, authProvider, provider, child) {
         final categoriaFiltroId = _validCategoriaFiltroId(provider.categorias);
         final movimientosFiltrados = _filterMovimientos(
           provider.movimientos,
@@ -64,9 +65,37 @@ class _HomeScreenState extends State<HomeScreen> {
                 icon: const Icon(Icons.refresh),
                 onPressed: provider.recargarDesdeBase,
               ),
+              IconButton(
+                tooltip: 'Sincronizar ahora',
+                icon: const Icon(Icons.cloud_sync_outlined),
+                onPressed:
+                    provider.syncSnapshot.isSyncing
+                        ? null
+                        : provider.sincronizarAhora,
+              ),
+              IconButton(
+                tooltip:
+                    authProvider.isAuthenticated
+                        ? 'Cerrar sesión'
+                        : 'Iniciar sesión con Google',
+                icon: Icon(
+                  authProvider.isAuthenticated
+                      ? Icons.logout
+                      : Icons.login_outlined,
+                ),
+                onPressed:
+                    authProvider.isLoading
+                        ? null
+                        : () => _handleAuthAction(authProvider, provider),
+              ),
             ],
           ),
-          body: _buildBody(provider, movimientosFiltrados, categoriaFiltroId),
+          body: _buildBody(
+            authProvider,
+            provider,
+            movimientosFiltrados,
+            categoriaFiltroId,
+          ),
           floatingActionButton: FloatingActionButton.extended(
             onPressed: () async {
               final result = await Navigator.push<bool>(
@@ -91,6 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildBody(
+    AuthProvider authProvider,
     MovimientosProvider provider,
     List<Movimiento> movimientosFiltrados,
     String? categoriaFiltroId,
@@ -139,7 +169,7 @@ class _HomeScreenState extends State<HomeScreen> {
       onRefresh: provider.recargarDesdeBase,
       child: Column(
         children: [
-          _buildSyncBanner(provider),
+          _buildSyncBanner(authProvider, provider),
           _buildResumenCard(provider),
           _buildFiltroCategoria(provider.categorias, categoriaFiltroId),
           if (provider.error != null)
@@ -168,46 +198,109 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildSyncBanner(MovimientosProvider provider) {
+  Future<void> _handleAuthAction(
+    AuthProvider authProvider,
+    MovimientosProvider provider,
+  ) async {
+    final success =
+        authProvider.isAuthenticated
+            ? await authProvider.signOut()
+            : await authProvider.signInWithGoogle();
+
+    if (!mounted) {
+      return;
+    }
+
+    if (success) {
+      await provider.recargarDesdeBase();
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    final message =
+        success
+            ? authProvider.isAuthenticated
+                ? 'Sesión iniciada'
+                : 'Sesión cerrada'
+            : authProvider.error ?? 'No se pudo completar la acción.';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: success ? Colors.green : Colors.red,
+      ),
+    );
+  }
+
+  Widget _buildSyncBanner(
+    AuthProvider authProvider,
+    MovimientosProvider provider,
+  ) {
+    final snapshot = provider.syncSnapshot;
+    final isAuthenticated = authProvider.isAuthenticated;
+    final color =
+        snapshot.hasError
+            ? Colors.red
+            : isAuthenticated
+            ? Colors.blue
+            : Colors.amber;
+    final icon =
+        snapshot.hasError
+            ? Icons.error_outline
+            : isAuthenticated
+            ? Icons.cloud_done_outlined
+            : Icons.phone_iphone;
+    final detail = _syncDetailText(authProvider, provider);
+
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color:
-            provider.isRemoteSyncEnabled
-                ? Colors.blue.shade50
-                : Colors.amber.shade50,
+        color: color.shade50,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color:
-              provider.isRemoteSyncEnabled
-                  ? Colors.blue.shade200
-                  : Colors.amber.shade300,
-        ),
+        border: Border.all(color: color.shade200),
       ),
       child: Row(
         children: [
-          Icon(
-            provider.isRemoteSyncEnabled
-                ? Icons.cloud_queue
-                : Icons.phone_iphone,
-            color:
-                provider.isRemoteSyncEnabled
-                    ? Colors.blue.shade700
-                    : Colors.amber.shade800,
-          ),
+          Icon(icon, color: color.shade700),
           const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              provider.isRemoteSyncEnabled
-                  ? 'Sync remoto preparado. La autenticación aún no está activa.'
-                  : 'Modo local activo. Todo se guarda en SQLite del dispositivo.',
-            ),
-          ),
+          Expanded(child: Text(detail)),
         ],
       ),
     );
+  }
+
+  String _syncDetailText(
+    AuthProvider authProvider,
+    MovimientosProvider provider,
+  ) {
+    final snapshot = provider.syncSnapshot;
+    if (!authProvider.isAuthenticated) {
+      final pending = snapshot.pendingCount;
+      return pending > 0
+          ? 'Modo local. $pending cambios se sincronizarán al iniciar sesión.'
+          : 'Modo local activo. Todo se guarda en SQLite del dispositivo.';
+    }
+    if (snapshot.hasError) {
+      return snapshot.lastError ?? 'No se pudo sincronizar.';
+    }
+    if (snapshot.isSyncing) {
+      return 'Sincronizando cambios con Supabase...';
+    }
+    if (snapshot.pendingCount > 0) {
+      return '${snapshot.pendingCount} cambios pendientes de sincronización.';
+    }
+    final lastSyncedAt = snapshot.lastSyncedAt;
+    if (lastSyncedAt == null) {
+      return 'Sesión activa. Listo para sincronizar con Supabase.';
+    }
+    final formatted = DateFormat(
+      'dd/MM/yyyy HH:mm',
+      'es_BO',
+    ).format(lastSyncedAt.toLocal());
+    return 'Sincronizado. Última actualización: $formatted.';
   }
 
   Widget _buildResumenCard(MovimientosProvider provider) {

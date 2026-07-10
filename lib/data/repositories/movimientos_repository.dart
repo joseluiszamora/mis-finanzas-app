@@ -7,6 +7,7 @@ import '../../models/sync_status.dart';
 import '../../models/tipo_movimiento.dart';
 import '../local/app_database.dart';
 import '../sync/sync_coordinator.dart';
+import '../sync/sync_types.dart';
 
 abstract class MovimientosRepository {
   Future<List<Movimiento>> obtenerMovimientos();

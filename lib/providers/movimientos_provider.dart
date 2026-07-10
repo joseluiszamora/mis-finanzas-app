@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import '../data/repositories/catalogos_repository.dart';
 import '../data/repositories/movimientos_repository.dart';
 import '../data/sync/sync_coordinator.dart';
+import '../data/sync/sync_state.dart';
 import '../models/categoria.dart';
 import '../models/grupo.dart';
 import '../models/movimiento.dart';
@@ -19,7 +20,9 @@ class MovimientosProvider extends ChangeNotifier {
   }) : _movimientosRepository = movimientosRepository,
        _catalogosRepository = catalogosRepository,
        _syncCoordinator = syncCoordinator,
-       _uuid = uuid ?? const Uuid();
+       _uuid = uuid ?? const Uuid() {
+    _syncCoordinator.addListener(notifyListeners);
+  }
 
   final MovimientosRepository _movimientosRepository;
   final CatalogosRepository _catalogosRepository;
@@ -45,6 +48,7 @@ class MovimientosProvider extends ChangeNotifier {
   String? get error => _error;
   String get syncModeLabel => _syncCoordinator.syncModeLabel;
   bool get isRemoteSyncEnabled => _syncCoordinator.isRemoteSyncEnabled;
+  SyncSnapshot get syncSnapshot => _syncCoordinator.snapshot;
 
   double get totalIngresos => _resumen.totalIngresos;
   double get totalEgresos => _resumen.totalEgresos;
@@ -76,6 +80,7 @@ class MovimientosProvider extends ChangeNotifier {
     try {
       await _recargarTodo();
       await _syncCoordinator.attemptSync();
+      await _recargarTodo();
     } catch (e) {
       _error = 'Error al recargar datos locales: $e';
     } finally {
@@ -200,6 +205,20 @@ class MovimientosProvider extends ChangeNotifier {
 
   String generarIdTemporal() => _uuid.v4();
 
+  Future<void> sincronizarAhora() async {
+    _setLoading(true);
+    _error = null;
+
+    try {
+      await _syncCoordinator.synchronizeNow();
+      await _recargarTodo();
+    } catch (e) {
+      _error = 'Error al sincronizar: $e';
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   Future<void> _recargarTodo() async {
     await Future.wait([_recargarMovimientos(), _recargarCatalogos()]);
     _resumen = await _movimientosRepository.obtenerResumen();
@@ -239,5 +258,11 @@ class MovimientosProvider extends ChangeNotifier {
   void _setLoading(bool value) {
     _isLoading = value;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _syncCoordinator.removeListener(notifyListeners);
+    super.dispose();
   }
 }

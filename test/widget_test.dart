@@ -2,12 +2,14 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:finanzas/config/app_environment.dart';
+import 'package:finanzas/data/auth/auth_repository.dart';
 import 'package:finanzas/data/local/app_database.dart';
 import 'package:finanzas/data/repositories/catalogos_repository.dart';
 import 'package:finanzas/data/repositories/movimientos_repository.dart';
 import 'package:finanzas/data/sync/supabase_sync_service.dart';
 import 'package:finanzas/data/sync/sync_coordinator.dart';
 import 'package:finanzas/main.dart';
+import 'package:finanzas/providers/auth_provider.dart';
 import 'package:finanzas/providers/movimientos_provider.dart';
 
 void main() {
@@ -30,8 +32,15 @@ void main() {
       syncCoordinator: syncCoordinator,
     );
     await provider.init();
+    final authProvider = AuthProvider(
+      authRepository: LocalOnlyAuthRepository(),
+      syncCoordinator: syncCoordinator,
+    );
+    await authProvider.restoreSession();
 
-    await tester.pumpWidget(MyApp(provider: provider));
+    await tester.pumpWidget(
+      MyApp(movimientosProvider: provider, authProvider: authProvider),
+    );
     await tester.pumpAndSettle();
 
     expect(
@@ -48,6 +57,8 @@ SyncCoordinator _buildSyncCoordinator(AppDatabase database) {
     enableRemoteSync: false,
     supabaseUrl: '',
     supabaseAnonKey: '',
+    googleClientId: '',
+    googleServerClientId: '',
   );
 
   return SyncCoordinator(
